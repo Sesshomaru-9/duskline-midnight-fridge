@@ -1,69 +1,81 @@
 #!/usr/bin/env python3
-"""Duskline Midnight Fridge — one-line roast of a smart fridge that
-refuses to open after midnight.
+"""Duskline Midnight Fridge — a one-line roast aimed at a smart fridge
+that turns into a bouncer after midnight.
 
-Writes exactly one line of text to $MAKEFUN_OUTPUT_DIR/entry.txt.
-Python 3.13 standard library only. Writes nowhere else.
+Running this script produces exactly one file, entry.txt, inside the
+directory named by MAKEFUN_OUTPUT_DIR. It never writes anywhere else,
+and it needs nothing beyond the Python 3.13 standard library.
 """
 
 import os
 import sys
 
-# The roast: one line, 1-200 characters (kit gate), no control characters.
-ROAST = (
+# The roast itself. One line, and the kit gate wants 1-200 characters,
+# no control characters, and more than just whitespace.
+LINE = (
     "My fridge locks itself after midnight like it pays the rent \u2014 "
     "relax, you're a box with a light, not a bouncer."
 )
 
-MIN_CHARS = 1
-MAX_CHARS = 200
+LOWER = 1
+UPPER = 200
+OUT_NAME = "entry.txt"
 
 
-def validate(text: str) -> None:
-    """Raise ValueError if the text breaks the kit gate."""
-    if not (MIN_CHARS <= len(text) <= MAX_CHARS):
+def check_line(text: str) -> None:
+    """Complain (ValueError) if the line would fail the kit gate."""
+    n_chars = len(text)
+    if n_chars < LOWER or n_chars > UPPER:
         raise ValueError(
-            f"length {len(text)} chars outside gate {MIN_CHARS}-{MAX_CHARS}"
+            f"line is {n_chars} chars; gate wants {LOWER}-{UPPER}"
         )
-    if text != text.strip() or text.strip() == "":
-        raise ValueError("text must not be only whitespace or padded")
-    if "\n" in text or "\r" in text:
-        raise ValueError("text must be a single line")
-    if any(ord(ch) < 0x20 or ord(ch) == 0x7F for ch in text):
-        raise ValueError("text contains a control character")
-    # UTF-8 byte length must also sit inside the gate (ASCII here, so equal).
-    if not (MIN_CHARS <= len(text.encode("utf-8")) <= MAX_CHARS):
-        raise ValueError("UTF-8 byte length outside gate")
+    if not text.strip():
+        raise ValueError("line is only whitespace")
+    if text != text.strip():
+        raise ValueError("line has leading or trailing whitespace")
+    for ch in text:
+        code = ord(ch)
+        if code < 0x20 or code == 0x7F:
+            raise ValueError(f"control character U+{code:04X} in line")
+        if ch in ("\n", "\r"):
+            raise ValueError("line must not contain a newline")
+    n_bytes = len(text.encode("utf-8"))
+    if n_bytes < LOWER or n_bytes > UPPER:
+        raise ValueError(f"line is {n_bytes} UTF-8 bytes; gate wants {LOWER}-{UPPER}")
 
 
-def main() -> int:
+def run() -> int:
     out_dir = os.environ.get("MAKEFUN_OUTPUT_DIR")
     if not out_dir:
-        print("warning: MAKEFUN_OUTPUT_DIR is not set; nothing written",
-              file=sys.stderr)
+        print(
+            "warning: MAKEFUN_OUTPUT_DIR is unset; nothing was written",
+            file=sys.stderr,
+        )
         return 0
     try:
-        validate(ROAST)
+        check_line(LINE)
         os.makedirs(out_dir, exist_ok=True)
-        path = os.path.join(out_dir, "entry.txt")
-        with open(path, "w", encoding="utf-8", newline="\n") as f:
-            f.write(ROAST + "\n")
-        # Read back and verify the written bytes match exactly.
-        with open(path, "rb") as f:
-            raw = f.read()
-        if raw != (ROAST + "\n").encode("utf-8"):
-            print("warning: read-back mismatch; output not verified",
-                  file=sys.stderr)
-            return 0
+        target = os.path.join(out_dir, OUT_NAME)
+        payload = (LINE + "\n").encode("utf-8")
+        with open(target, "wb") as handle:
+            handle.write(payload)
+        # Read the file back and make sure the bytes on disk are exactly
+        # what we meant to write.
+        with open(target, "rb") as handle:
+            if handle.read() != payload:
+                print(
+                    "warning: read-back mismatch; output unverified",
+                    file=sys.stderr,
+                )
+                return 0
     except OSError as exc:
-        print(f"warning: cannot write to {out_dir!r}: {exc}",
-              file=sys.stderr)
+        print(f"warning: cannot write into {out_dir!r}: {exc}", file=sys.stderr)
         return 0
     except ValueError as exc:
-        print(f"warning: roast failed validation: {exc}", file=sys.stderr)
+        print(f"warning: line failed the gate: {exc}", file=sys.stderr)
         return 0
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run())
